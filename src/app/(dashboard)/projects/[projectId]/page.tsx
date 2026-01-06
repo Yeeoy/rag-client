@@ -10,6 +10,7 @@ import { Chat, Project, ProjectDocument, ProjectSettings } from "@/lib/types";
 import { useAuth } from "@clerk/nextjs";
 import { use, useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 interface ProjectPageProps {
     params: Promise<{
@@ -27,6 +28,7 @@ interface ProjectData {
 function ProjectPage({ params }: ProjectPageProps) {
     const { projectId } = use(params);
     const { getToken, userId } = useAuth();
+    const router = useRouter();
 
     // Data State
     const [data, setData] = useState<ProjectData>({
@@ -91,6 +93,36 @@ function ProjectPage({ params }: ProjectPageProps) {
         loadAllData();
     }, [userId, projectId]);
 
+    useEffect(() => {
+        const hasProcessingDocuments = data.documents.some(
+            (doc) =>
+                doc.processing_status &&
+            !["completed","failed"].includes(doc.processing_status)
+        );
+
+        if (!hasProcessingDocuments){
+            return;
+        }
+        const pollInterval = setInterval(async () => {
+            try{
+                const token = await getToken();
+                const documentsRes = await apiClient.get(
+                    `/api/projects/${projectId}/files`,
+                    token
+                );
+
+                setData((prev) => ({
+                    ...prev,
+                    documents: documentsRes.data
+                }))
+            }catch(err){
+                console.error("Polling error:", err)
+            }
+        }, 2000);
+
+        return () => clearInterval(pollInterval);
+    },[data.documents, projectId, getToken]);
+
     const handleCreateNewChat = async () => {
         if (!userId) return;
         try {
@@ -138,7 +170,7 @@ function ProjectPage({ params }: ProjectPageProps) {
     };
 
     const handleChatClick = (chatId: string) => {
-        console.log("Navigate to chat:", chatId);
+        router.push(`/projects/${projectId}/chats/${chatId}`);
     };
 
     const handleDocumentUpload = async (files: File[]) => {
